@@ -148,9 +148,17 @@ async function main() {
     const { score } = computeRelevance(film, { now });
     film.relevance = score;
     film.facts = generateFacts(film);
+    // Vorpremiere = upcoming showtimes dated BEFORE the official Filmstart (= preview
+    // screenings you can already buy tickets for; this is where premieres happen).
+    const previewDates = film.releaseDate
+      ? [...new Set(f.showtimes.filter((s) => s.date >= now && s.date < film.releaseDate).map((s) => s.date))].sort()
+      : [];
+    film.previewDates = previewDates;
+    film.isVorpremiere = previewDates.length > 0;
     film.isPremiere = Boolean(
-      film.isUpcoming ||
-        (film.releaseDate && (Date.parse(film.releaseDate) - Date.parse(now)) / 86400000 >= -21)
+      film.isVorpremiere ||
+        film.isUpcoming ||
+        (film.releaseDate && (Date.parse(film.releaseDate) - Date.parse(now)) / 86400000 >= -7)
     );
     film.isUpcoming = Boolean(film.isUpcoming);
     film.isNew = Boolean(film.isNew);
