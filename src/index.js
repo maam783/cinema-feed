@@ -148,9 +148,12 @@ async function main() {
     const { score } = computeRelevance(film, { now });
     film.relevance = score;
     film.facts = generateFacts(film);
-    film.isPremiere =
+    film.isPremiere = Boolean(
       film.isUpcoming ||
-      (film.releaseDate && (Date.parse(film.releaseDate) - Date.parse(now)) / 86400000 >= -21);
+        (film.releaseDate && (Date.parse(film.releaseDate) - Date.parse(now)) / 86400000 >= -21)
+    );
+    film.isUpcoming = Boolean(film.isUpcoming);
+    film.isNew = Boolean(film.isNew);
     delete film.cinemaRefs;
     delete film.countryInfo;
     return film;
