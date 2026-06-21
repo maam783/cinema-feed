@@ -137,6 +137,7 @@ async function main() {
       basedOn: enr.basedOn || null,
       imdbId: enr.imdbId || null,
       popularity: enr.popularity ?? null,
+      voteCount: enr.voteCount ?? null,
       ratings: enr.ratings || null,
       poster: enr.poster || f.poster, // prefer TMDB poster if present
       cinemaIds,
