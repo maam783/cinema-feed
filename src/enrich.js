@@ -72,6 +72,7 @@ async function tmdb(title, year, key) {
     collection: d.belongs_to_collection?.name || null,
     popularity: typeof d.popularity === 'number' ? d.popularity : null,
     voteCount: typeof d.vote_count === 'number' ? d.vote_count : null,
+    genres: Array.isArray(d.genres) ? d.genres.map((g) => g.name).filter(Boolean) : null,
     imdbId: d.imdb_id || null,
     poster: d.poster_path ? `https://image.tmdb.org/t/p/w500${d.poster_path}` : null,
     ratings: d.vote_average ? { audience: Math.round(d.vote_average * 10) / 10, source: 'TMDB' } : null,

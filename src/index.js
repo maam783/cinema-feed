@@ -138,6 +138,7 @@ async function main() {
       imdbId: enr.imdbId || null,
       popularity: enr.popularity ?? null,
       voteCount: enr.voteCount ?? null,
+      tmdbGenres: enr.genres || null, // fallback genre classification when berlin.de has none
       ratings: enr.ratings || null,
       poster: enr.poster || f.poster, // prefer TMDB poster if present
       cinemaIds,
