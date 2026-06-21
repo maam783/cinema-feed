@@ -1,0 +1,5 @@
+node_modules/
+site/
+fixtures/
+*.log
+.DS_Store
