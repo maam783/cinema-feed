@@ -6,14 +6,24 @@ export const UA =
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Global polite throttle: space out request *starts* regardless of concurrency.
+// Adaptive global throttle: spaces out request *starts* regardless of concurrency,
+// and self-tunes — the gap ramps up on 429 (server pushing back) and slowly decays on
+// success, converging on the host's sustainable rate without manual tuning.
 const REQ_GAP_MS = +(process.env.REQ_GAP_MS || 180);
+const MAX_GAP_MS = +(process.env.MAX_GAP_MS || 2500);
 let _nextSlot = 0;
+let _gap = REQ_GAP_MS;
 async function gate() {
   const now = Date.now();
   const wait = Math.max(0, _nextSlot - now);
-  _nextSlot = Math.max(now, _nextSlot) + REQ_GAP_MS;
+  _nextSlot = Math.max(now, _nextSlot) + _gap;
   if (wait) await sleep(wait);
+}
+function onThrottled() {
+  _gap = Math.min(Math.round(_gap * 1.5) + 100, MAX_GAP_MS);
+}
+function onOk() {
+  if (_gap > REQ_GAP_MS) _gap = Math.max(REQ_GAP_MS, Math.round(_gap * 0.97));
 }
 
 /** Fetch text with throttle, timeout, and 429/5xx backoff. Returns null on permanent failure. */
@@ -35,17 +45,19 @@ export async function fetchText(url, { tries = 4, timeoutMs = 15000 } = {}) {
       });
       clearTimeout(t);
       if (res.status === 404 || res.status === 410) return null; // gone — don't retry
-      if (res.status === 429 || res.status >= 500) {
+      if (res.status === 429 || res.status === 403 || res.status >= 500) {
+        onThrottled(); // slow the whole crawl, not just this request
         const ra = +(res.headers.get('retry-after') || 0);
-        const backoff = ra ? ra * 1000 : 1500 * 2 ** attempt + Math.floor(Math.random() * 500);
+        const backoff = ra ? ra * 1000 : 1200 * 2 ** attempt + Math.floor(Math.random() * 400);
         if (attempt === tries - 1) {
           console.warn(`  give up (${res.status}) ${url}`);
           return null;
         }
-        await sleep(Math.min(backoff, 30000));
+        await sleep(Math.min(backoff, 8000));
         continue;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      onOk();
       return await res.text();
     } catch (err) {
       clearTimeout(t);

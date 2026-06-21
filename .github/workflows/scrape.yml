@@ -35,7 +35,7 @@ jobs:
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
-          REQ_GAP_MS: "450"
+          REQ_GAP_MS: "400"
         run: node src/index.js
 
       - name: Commit warmed caches

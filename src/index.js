@@ -44,7 +44,7 @@ async function main() {
   // 2) Fetch + parse film detail pages
   const failedIds = [];
   const rawFilms = (
-    await mapLimit(ids, 4, async (id) => {
+    await mapLimit(ids, 3, async (id) => {
       const f = await fetchFilm(id);
       if (!f) failedIds.push(id);
       return f;
@@ -80,7 +80,7 @@ async function main() {
     (cid) => !cid.startsWith('name:') && !cinemaCache[cid]
   );
   log(`Cinemas: ${cinemaMap.size} (${cinemasToFetch.length} new to fetch).`);
-  await mapLimit(cinemasToFetch, 4, async (cid) => {
+  await mapLimit(cinemasToFetch, 2, async (cid) => {
     const c = await fetchCinema(cid);
     if (c) cinemaCache[cid] = { address: c.address, website: c.website };
   });
@@ -95,10 +95,34 @@ async function main() {
   const tmdbKey = process.env.TMDB_API_KEY || '';
   const omdbKey = process.env.OMDB_API_KEY || '';
 
+  // Bounded, prioritized enrichment: only cache-misses, top films by footprint first,
+  // capped per run + time-boxed. The cache is committed back, so coverage grows over
+  // runs and warm runs are instant. The feed always ships regardless of enrichment.
   const skipEnrich = process.env.SKIP_ENRICH === '1';
-  const films = [];
-  await mapLimit(rawFilms, tmdbKey || omdbKey ? 3 : 2, async (f) => {
-    const enr = skipEnrich ? {} : await enrichFilm(f, { cache: enrichCache, tmdbKey, omdbKey }).catch(() => ({}));
+  const maxEnrich = +(process.env.MAX_ENRICH_PER_RUN || 50);
+  const enrichBudgetMs = +(process.env.ENRICH_BUDGET_MS || 120000);
+  const isCached = (id) => {
+    const e = enrichCache[id];
+    return e && e.ts && Date.now() - e.ts < 30 * 86400000;
+  };
+  if (!skipEnrich) {
+    const targets = rawFilms
+      .filter((f) => !isCached(f.id))
+      .sort((a, b) => b.showtimes.length - a.showtimes.length)
+      .slice(0, maxEnrich);
+    log(`Enriching ${targets.length} films (cap ${maxEnrich}, budget ${enrichBudgetMs}ms)…`);
+    const start = Date.now();
+    let done = 0;
+    await mapLimit(targets, 3, async (f) => {
+      if (Date.now() - start > enrichBudgetMs) return; // budget spent → leave for next run
+      await enrichFilm(f, { cache: enrichCache, tmdbKey, omdbKey }).catch(() => {});
+      done++;
+    });
+    log(`Enriched ${done}/${targets.length} this run.`);
+  }
+
+  const films = rawFilms.map((f) => {
+    const enr = enrichCache[f.id]?.data || {};
     const ci = normalizeCountry(f.country);
     const cinemaIds = [...new Set(f.showtimes.map((s) => s.cinemaId))];
     const film = {
@@ -124,17 +148,14 @@ async function main() {
     const { score } = computeRelevance(film, { now });
     film.relevance = score;
     film.facts = generateFacts(film);
-    // premiere = recent or upcoming theatrical start
     film.isPremiere =
       film.isUpcoming ||
-      (film.releaseDate &&
-        (Date.parse(film.releaseDate) - Date.parse(now)) / 86400000 >= -21);
+      (film.releaseDate && (Date.parse(film.releaseDate) - Date.parse(now)) / 86400000 >= -21);
     delete film.cinemaRefs;
     delete film.countryInfo;
-    films.push(film);
+    return film;
   });
 
-  // de-dupe by id (already unique) — keep
   films.sort((a, b) => b.relevance - a.relevance);
 
   // 6) Cinemas list with booking URLs (direct chain or null -> app builds film-specific search)
