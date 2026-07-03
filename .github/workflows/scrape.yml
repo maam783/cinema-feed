@@ -52,5 +52,17 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+      # GitHub Pages' backend occasionally returns a transient "Deployment failed,
+      # try again later" even though scrape + artifact upload succeeded. One automatic
+      # retry (a fresh deployment after a short wait) keeps a single blip from failing
+      # the run — which would otherwise email a failure notice AND leave the feed stale.
+      # Only a double failure goes red, so genuine outages still surface.
       - id: deploy
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - name: Wait before Pages redeploy
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 30
+      - name: Retry Pages deploy (transient backend failure)
+        if: steps.deploy.outcome == 'failure'
         uses: actions/deploy-pages@v4
