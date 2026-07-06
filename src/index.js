@@ -157,11 +157,6 @@ async function main() {
       : [];
     film.previewDates = previewDates;
     film.isVorpremiere = previewDates.length > 0;
-    film.isPremiere = Boolean(
-      film.isVorpremiere ||
-        film.isUpcoming ||
-        (film.releaseDate && (Date.parse(film.releaseDate) - Date.parse(now)) / 86400000 >= -7)
-    );
     film.isUpcoming = Boolean(film.isUpcoming);
     film.isNew = Boolean(film.isNew);
     delete film.cinemaRefs;
