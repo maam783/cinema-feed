@@ -73,6 +73,8 @@ test('parseFilm extracts fields + showtimes from fixture', { skip: !existsSync(f
   assert.equal(film.fsk, 16);
   assert.equal(film.releaseDate, '2026-06-18');
   assert.ok(film.cast.includes('Renate Reinsve'));
+  // poster is read from the page (Print2 preferred), not blindly guessed
+  assert.equal(film.poster, 'https://www.berlin.de/kino/_img/filmbilder/p_314067_Print2.jpg');
   assert.ok(film.showtimes.length > 100, 'popular film has many showtimes');
   // versions detected and constrained
   const versions = new Set(film.showtimes.map((s) => s.version));

@@ -90,6 +90,19 @@ export function parseFilm(html, id) {
     if (t.length > 80 && !/^"/.test(t) && !/Filmstart|Cookie|Barrierefrei/i.test(t)) synopsis = t;
   });
 
+  // Poster: read the actual image the detail page links, don't guess the URL. berlin.de uses
+  // two naming schemes — p_{id}_PrintN.jpg (proper portrait posters) for most films, but
+  // pic_{id}_{n}.jpg (also portrait) for others. The old hardcoded p_{id}_Print2.jpg 404'd for
+  // ~15% of films (those without a Print2 poster) → blank placeholder in the app. Prefer Print2
+  // (the standard poster), then any Print poster, then the first pic image; only if the page
+  // references no film image at all do we fall back to the constructed guess.
+  const posterFile =
+    (html.includes(`p_${id}_Print2.jpg`) && `p_${id}_Print2.jpg`) ||
+    (html.match(new RegExp(`p_${id}_Print\\d+\\.jpg`, 'i')) || [])[0] ||
+    (html.match(new RegExp(`pic_${id}_\\d+\\.jpg`, 'i')) || [])[0] ||
+    `p_${id}_Print2.jpg`;
+  const poster = `${BASE}/_img/filmbilder/${posterFile}`;
+
   // Website (external film site): the link in the "Filmwebsite" row of Filmdaten.
   let website = null;
   const wm = html.match(/Filmwebsite[\s\S]{0,200}?href="(https?:\/\/[^"]+)"/i);
@@ -141,7 +154,7 @@ export function parseFilm(html, id) {
     id,
     title,
     synopsis: synopsis || null,
-    poster: `${BASE}/_img/filmbilder/p_${id}_Print2.jpg`,
+    poster,
     releaseDate,
     genre,
     cast,
