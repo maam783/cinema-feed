@@ -6,6 +6,7 @@ import { discoverFilmIds, fetchFilm, fetchCinema } from './berlin.js';
 import { enrichFilm } from './enrich.js';
 import { computeRelevance, generateFacts, normalizeCountry, countryFilterOrder } from './relevance.js';
 import { bookingUrl } from './cinemas.js';
+import { geocodeAddress } from './geocode.js';
 import { mapLimit, sleep } from './util.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -82,12 +83,33 @@ async function main() {
   log(`Cinemas: ${cinemaMap.size} (${cinemasToFetch.length} new to fetch).`);
   await mapLimit(cinemasToFetch, 2, async (cid) => {
     const c = await fetchCinema(cid);
-    if (c) cinemaCache[cid] = { address: c.address, website: c.website };
+    if (c) cinemaCache[cid] = { ...cinemaCache[cid], address: c.address, website: c.website };
   });
+
+  // Geocode cinemas with a known address but no coordinates yet (permanently cached — a
+  // cinema's street address doesn't move). Sequential + rate-limited (Nominatim policy: max
+  // 1 req/s), time-boxed so a large first-run backfill can't stall the workflow indefinitely;
+  // any leftovers are picked up on the next run. Failed lookups are never cached, so they retry.
+  const geocodeBudgetMs = +(process.env.GEOCODE_BUDGET_MS || 300000);
+  const toGeocode = [...cinemaMap.keys()].filter(
+    (cid) => cinemaCache[cid]?.address && cinemaCache[cid]?.lat == null
+  );
+  log(`Geocoding: ${toGeocode.length} cinema(s) missing coordinates.`);
+  const geocodeStart = Date.now();
+  let geocoded = 0;
+  for (const cid of toGeocode) {
+    if (Date.now() - geocodeStart > geocodeBudgetMs) break; // budget spent → next run picks up
+    const loc = await geocodeAddress(cinemaCache[cid].address);
+    if (loc) { cinemaCache[cid] = { ...cinemaCache[cid], ...loc }; geocoded++; }
+  }
+  if (toGeocode.length) log(`  geocoded ${geocoded}/${toGeocode.length} this run.`);
+
   for (const [cid, c] of cinemaMap) {
     const extra = cinemaCache[cid] || {};
     c.address = extra.address || null;
     c.website = extra.website || null;
+    c.lat = extra.lat ?? null;
+    c.lon = extra.lon ?? null;
   }
 
   // 4) Enrich (cached) + 5) score + facts
