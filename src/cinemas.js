@@ -4,14 +4,20 @@
 // search (which surfaces a "Tickets" widget) for the long tail.
 
 // substring of the berlin.de cinema name (lowercased) -> official ticketing/site URL
+// Every URL below is HTTP-verified (curl -L → 200; cineplex.de sits behind a WAF that 403s
+// curl, its slugs are verified via site: search instead). The first batch of chain URLs was
+// guessed from memory and silently 404'd (CineStar, CinemaxX, UCI, Zoo Palast) — always
+// verify before adding here.
 const BOOKING = [
-  ['zoo palast', 'https://www.zoopalast-berlin.de/'],
-  ['zoopalast', 'https://www.zoopalast-berlin.de/'],
-  ['cinestar', 'https://www.cinestar.de/kino-berlin'],
-  ['cubix', 'https://www.cinestar.de/kino/berlin-cinestar-cubix-am-alexanderplatz'],
-  ['kulturbrauerei', 'https://www.cinestar.de/kino/berlin-kino-in-der-kulturbrauerei'],
-  ['cinemaxx', 'https://www.cinemaxx.de/kino-berlin-potsdamer-platz'],
-  ['uci', 'https://www.uci-kinowelt.de/kinos/berlin'],
+  ['zoo palast', 'https://zoopalast.premiumkino.de/'],
+  ['zoopalast', 'https://zoopalast.premiumkino.de/'],
+  ['cubix', 'https://www.cinestar.de/kino-berlin-cubix-am-alexanderplatz'],
+  ['kulturbrauerei', 'https://www.cinestar.de/berlin-kino-in-der-kulturbrauerei'],
+  ['hellersdorf', 'https://www.cinestar.de/kino-berlin-hellersdorf'],
+  ['cinestar tegel', 'https://www.cinestar.de/kino-berlin-tegel'],
+  ['cinestar', 'https://www.cinestar.de/'],
+  ['cinemaxx', 'https://www.cinemaxx.de/kinoprogramm/berlin'],
+  ['uci', 'https://www.uci-kinowelt.de/'],
   // Cineplex: location-slug scheme confirmed via cineplex.de search results (their WAF
   // blocks curl, so verified via site: search, not HTTP). Specific houses before the
   // generic fallback — first match wins.
@@ -52,8 +58,8 @@ const BOOKING = [
   ['acud', 'https://acudkino.de/'],
   ['moviemento', 'https://www.moviemento.de/'],
   ['hackesche höfe', 'https://www.hoefekino.de/'],
-  ['cosima', 'https://www.cosima-kino.de/'],
-  ['intimes', 'https://www.intimes-kino.de/'],
+  ['cosima', 'https://www.cosima-filmtheater.de/'],
+  ['intimes', 'https://www.kino-intimes.de/'],
 ];
 
 /** Best-effort ticketing URL for a cinema + film. */
