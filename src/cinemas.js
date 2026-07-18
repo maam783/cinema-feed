@@ -12,6 +12,17 @@ const BOOKING = [
   ['kulturbrauerei', 'https://www.cinestar.de/kino/berlin-kino-in-der-kulturbrauerei'],
   ['cinemaxx', 'https://www.cinemaxx.de/kino-berlin-potsdamer-platz'],
   ['uci', 'https://www.uci-kinowelt.de/kinos/berlin'],
+  // Cineplex: location-slug scheme confirmed via cineplex.de search results (their WAF
+  // blocks curl, so verified via site: search, not HTTP). Specific houses before the
+  // generic fallback — first match wins.
+  ['titania', 'https://www.cineplex.de/berlin-steglitz'],
+  ['alhambra', 'https://www.cineplex.de/berlin-alhambra'],
+  ['neukölln arcaden', 'https://www.cineplex.de/berlin-neukoelln'],
+  ['cineplex spandau', 'https://www.cineplex.de/berlin-spandau'],
+  ['cineplex', 'https://www.cineplex.de/'],
+  ['astra', 'https://www.astra-berlin.de/'],
+  ['thalia', 'https://www.thalia-potsdam.de/'],
+  ['spreehöfe', 'https://www.kino-spreehoefe.de/'],
   ['astor', 'https://www.astor-filmlounge.de/berlin/'],
   ['delphi filmpalast', 'https://www.yorck.de/kinos/delphi-filmpalast'],
   ['delphi lux', 'https://www.yorck.de/kinos/delphi-lux'],
