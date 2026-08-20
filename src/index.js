@@ -2,7 +2,7 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { discoverFilmIds, fetchFilm, fetchCinema } from './berlin.js';
+import { discoverFilmIds, fetchFilm, fetchCinema, mergeCinemaShowtimes } from './berlin.js';
 import { enrichFilm } from './enrich.js';
 import { computeRelevance, generateFacts, normalizeCountry, countryFilterOrder } from './relevance.js';
 import { bookingUrl } from './cinemas.js';
@@ -76,15 +76,29 @@ async function main() {
       if (!cinemaMap.has(cid)) cinemaMap.set(cid, { id: cid, ...ref });
     }
   }
-  // enrich cinemas with address/website (cached; only fetch unknowns)
-  const cinemasToFetch = [...cinemaMap.keys()].filter(
-    (cid) => !cid.startsWith('name:') && !cinemaCache[cid]
-  );
-  log(`Cinemas: ${cinemaMap.size} (${cinemasToFetch.length} new to fetch).`);
-  await mapLimit(cinemasToFetch, 2, async (cid) => {
+  // Address stays cached; showtimes do not — film pages omit some houses that the
+  // cinema page lists for the same film id (Zoo Palast 2D / Die Odyssee, Aug 2026).
+  const cinemaIds = [...cinemaMap.keys()].filter((cid) => !cid.startsWith('name:'));
+  const extraShowtimes = [];
+  log(`Cinemas: ${cinemaMap.size} (fetching ${cinemaIds.length} pages for showtimes).`);
+  await mapLimit(cinemaIds, 2, async (cid) => {
     const c = await fetchCinema(cid);
-    if (c) cinemaCache[cid] = { ...cinemaCache[cid], address: c.address, website: c.website };
+    if (!c) return;
+    if (c.address || c.website) {
+      cinemaCache[cid] = {
+        ...cinemaCache[cid],
+        address: c.address || cinemaCache[cid]?.address || null,
+        website: c.website || cinemaCache[cid]?.website || null,
+      };
+    }
+    if (c.showtimes?.length) {
+      extraShowtimes.push(
+        ...c.showtimes.map((s) => ({ ...s, cinemaName: c.name, district: c.district }))
+      );
+    }
   });
+  const merged = mergeCinemaShowtimes(rawFilms, extraShowtimes);
+  log(`  cinema pages filled ${merged.added} missing showtimes on ${merged.filmsTouched} films.`);
 
   // Geocode cinemas with a known address but no coordinates yet (permanently cached — a
   // cinema's street address doesn't move). Sequential + rate-limited (Nominatim policy: max

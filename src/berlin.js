@@ -130,24 +130,7 @@ export function parseFilm(html, id) {
     // base version from the film link text inside the panel ("Title (OmU)")
     const baseVersion = VERSION(clean($li.find('a[href*="filmdetail.php"]').first().text()));
     cinemaRefs.set(cinemaId, { name, district });
-
-    $li.find('table tbody tr').each((__, tr) => {
-      const tds = $(tr).find('td');
-      const date = parseGermanDate(clean($(tds[0]).text()));
-      const timesTxt = clean($(tds[1]).text());
-      if (!date || !timesTxt) return;
-      for (const part of timesTxt.split(',')) {
-        const tm = part.match(/(\d{1,2}:\d{2})/);
-        if (!tm) continue;
-        const suffix = part.replace(tm[1], '');
-        showtimes.push({
-          cinemaId,
-          date,
-          time: tm[1].padStart(5, '0'),
-          version: suffix.trim() ? VERSION(suffix) : baseVersion,
-        });
-      }
-    });
+    pushTableShowtimes($, $li, showtimes, { cinemaId, baseVersion });
   });
 
   return {
@@ -169,7 +152,68 @@ export function parseFilm(html, id) {
   };
 }
 
-/** Parse a cinema detail page → {id, name, district, address, website}. */
+/** berlin.de table rows → showtimes. Shared by film pages (one cinema) and cinema pages (one film). */
+function pushTableShowtimes($, $ctx, showtimes, { cinemaId, baseVersion, filmId }) {
+  $ctx.find('table tbody tr').each((_, tr) => {
+    const tds = $(tr).find('td');
+    const date = parseGermanDate(clean($(tds[0]).text()));
+    const timesTxt = clean($(tds[1]).text());
+    if (!date || !timesTxt) return;
+    for (const part of timesTxt.split(',')) {
+      const tm = part.match(/(\d{1,2}:\d{2})/);
+      if (!tm) continue;
+      const suffix = part.replace(tm[1], '');
+      const row = {
+        cinemaId,
+        date,
+        time: tm[1].padStart(5, '0'),
+        version: suffix.trim() ? VERSION(suffix) : baseVersion,
+      };
+      if (filmId) row.filmId = filmId;
+      showtimes.push(row);
+    }
+  });
+}
+
+export function showtimeKey(s) {
+  return `${s.cinemaId}\t${s.date}\t${s.time}\t${s.version}`;
+}
+
+/**
+ * Attach showtimes found on cinema pages to the matching film objects.
+ * berlin.de's filmdetail accordion sometimes omits a house that kinodetail lists
+ * for the same film id (Zoo Palast 2D Spider-Man, Die Odyssee, Aug 2026).
+ * Dedupes by cinema+day+time+version. Unknown film ids are skipped.
+ */
+export function mergeCinemaShowtimes(films, extras) {
+  const byId = new Map(films.map((f) => [String(f.id), f]));
+  const keys = new Map(films.map((f) => [String(f.id), new Set((f.showtimes || []).map(showtimeKey))]));
+  let added = 0;
+  const touched = new Set();
+  for (const st of extras) {
+    const film = byId.get(String(st.filmId));
+    if (!film || !st.cinemaId || !st.date || !st.time) continue;
+    const row = {
+      cinemaId: String(st.cinemaId),
+      date: st.date,
+      time: st.time,
+      version: st.version || 'DE',
+    };
+    const seen = keys.get(String(film.id));
+    const k = showtimeKey(row);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    film.showtimes.push(row);
+    if (film.cinemaRefs && !film.cinemaRefs[row.cinemaId] && st.cinemaName) {
+      film.cinemaRefs[row.cinemaId] = { name: st.cinemaName, district: st.district || null };
+    }
+    added++;
+    touched.add(String(film.id));
+  }
+  return { added, filmsTouched: touched.size };
+}
+
+/** Parse a cinema detail page → {id, name, district, address, website, showtimes}. */
 export function parseCinema(html, id) {
   if (!html) return null;
   const $ = cheerio.load(html);
@@ -193,7 +237,20 @@ export function parseCinema(html, id) {
     )
       website = href;
   });
-  return { id, name, district, address, website };
+
+  // Film accordion only — the same page also has a transit js-accordion. A panel
+  // without filmdetail.php is not a screening.
+  const showtimes = [];
+  $('ul.js-accordion > li').each((_, li) => {
+    const $li = $(li);
+    const filmHref = $li.find('a[href*="filmdetail.php"]').first().attr('href') || '';
+    const fm = filmHref.match(/filmdetail\.php\/(\d+)/);
+    if (!fm) return;
+    const baseVersion = VERSION(clean($li.find('a[href*="filmdetail.php"]').first().text()));
+    pushTableShowtimes($, $li, showtimes, { cinemaId: String(id), baseVersion, filmId: fm[1] });
+  });
+
+  return { id, name, district, address, website, showtimes };
 }
 
 export async function fetchFilm(id) {
