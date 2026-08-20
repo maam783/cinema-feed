@@ -8,7 +8,10 @@ on:
 
 concurrency:
   group: cinema-scrape
-  cancel-in-progress: false
+  # A scrape is ~4–11 min; crons are ~9 h apart. cancel-in-progress: false
+  # let a ghost-queued GitHub job (no runner, Aug 2026) block every later
+  # cron for 12 days. A new run may kill a stuck or leftover scrape.
+  cancel-in-progress: true
 
 permissions:
   contents: write
