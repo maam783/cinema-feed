@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { parseFilm, parseCinema, mergeCinemaShowtimes } from '../src/berlin.js';
+import { parseFilm, parseCinema, mergeCinemaShowtimes, merge3DVariants, strip3DTitle, is3DTitle } from '../src/berlin.js';
 import { parseGermanDate, parseGermanLongDate, clean } from '../src/util.js';
 import { normalizeCountry, countryFilterOrder, computeRelevance, generateFacts } from '../src/relevance.js';
 import { bookingUrl, hasDirectBooking } from '../src/cinemas.js';
@@ -119,4 +119,47 @@ test('mergeCinemaShowtimes fills holes and does not duplicate', () => {
   assert.equal(film.showtimes.length, 2);
   assert.ok(film.showtimes.some((s) => s.cinemaId === '30241' && s.time === '12:15'));
   assert.equal(film.cinemaRefs['30241'].name, 'Zoo Palast');
+});
+
+test('strip3DTitle only strips a trailing 3D token', () => {
+  assert.equal(strip3DTitle('Spider-Man: Brand New Day 3D'), 'Spider-Man: Brand New Day');
+  assert.equal(strip3DTitle('Vaiana (Live Action) 3D'), 'Vaiana (Live Action)');
+  assert.equal(strip3DTitle('Toy Story 3'), 'Toy Story 3');
+  assert.equal(is3DTitle('Toy Story 3'), false);
+  assert.equal(is3DTitle('Hoppers 3D'), true);
+});
+
+test('merge3DVariants folds 2D+3D into one film and leaves 3D-only alone', () => {
+  const twoD = {
+    id: '315264',
+    title: 'Spider-Man: Brand New Day',
+    year: 2026,
+    showtimes: [{ cinemaId: '30241', date: '2026-08-21', time: '13:15', version: 'DE' }],
+    cinemaRefs: { '30241': { name: 'Zoo Palast', district: 'Charlottenburg' } },
+  };
+  const threeD = {
+    id: '315274',
+    title: 'Spider-Man: Brand New Day 3D',
+    year: 2026,
+    showtimes: [{ cinemaId: '30241', date: '2026-08-21', time: '14:10', version: 'DE' }],
+    cinemaRefs: { '30241': { name: 'Zoo Palast', district: 'Charlottenburg' } },
+  };
+  const only3D = {
+    id: '278274',
+    title: 'Antarctica 3D',
+    year: 2012,
+    showtimes: [{ cinemaId: '1', date: '2026-08-21', time: '18:00', version: 'DE' }],
+  };
+  const { films, collapsed } = merge3DVariants([twoD, threeD, only3D]);
+  assert.equal(collapsed, 1);
+  assert.equal(films.length, 2);
+  const spider = films.find((f) => f.id === '315264');
+  const ice = films.find((f) => f.id === '278274');
+  assert.ok(spider);
+  assert.deepEqual(spider.aliasIds, ['315274']);
+  assert.equal(spider.showtimes.length, 2);
+  assert.ok(spider.showtimes.some((s) => s.time === '13:15' && s.format === '2D'));
+  assert.ok(spider.showtimes.some((s) => s.time === '14:10' && s.format === '3D'));
+  assert.equal(ice.title, 'Antarctica 3D');
+  assert.equal(ice.showtimes[0].format, '3D');
 });

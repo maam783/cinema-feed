@@ -176,7 +176,84 @@ function pushTableShowtimes($, $ctx, showtimes, { cinemaId, baseVersion, filmId 
 }
 
 export function showtimeKey(s) {
-  return `${s.cinemaId}\t${s.date}\t${s.time}\t${s.version}`;
+  return `${s.cinemaId}\t${s.date}\t${s.time}\t${s.version}\t${s.format || '2D'}`;
+}
+
+/** Trailing " 3D" / "(3D)" only — never "Toy Story 3". */
+const TITLE_3D = /\s*\(?3D\)?\s*$/i;
+export function strip3DTitle(title) {
+  return String(title || '').replace(TITLE_3D, '').trim();
+}
+export function is3DTitle(title) {
+  return TITLE_3D.test(String(title || ''));
+}
+
+function formatRow(st, format) {
+  return {
+    cinemaId: String(st.cinemaId),
+    date: st.date,
+    time: st.time,
+    version: st.version || 'DE',
+    format,
+  };
+}
+
+/**
+ * Collapse "Title 3D" into "Title" when both exist. berlin.de lists them as
+ * separate films; they are the same movie in different auditoriums.
+ * 3D-only titles (Antarctica 3D) stay put. Alias ids keep favorites working.
+ */
+export function merge3DVariants(films) {
+  const keyOf = (f) => `${strip3DTitle(f.title).toLowerCase()}\t${f.year || ''}`;
+  const groups = new Map();
+  for (const f of films) {
+    const k = keyOf(f);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(f);
+  }
+  const out = [];
+  let collapsed = 0;
+  for (const group of groups.values()) {
+    const bases = group.filter((f) => !is3DTitle(f.title));
+    const extras = group.filter((f) => is3DTitle(f.title));
+    if (!bases.length || !extras.length) {
+      const fmt = bases.length ? '2D' : '3D';
+      for (const f of group) {
+        for (const st of f.showtimes || []) if (!st.format) st.format = fmt;
+      }
+      out.push(...group);
+      continue;
+    }
+    const base = [...bases].sort((a, b) => (b.showtimes?.length || 0) - (a.showtimes?.length || 0))[0];
+    const seen = new Set();
+    const showtimes = [];
+    const absorb = (src, format) => {
+      for (const st of src.showtimes || []) {
+        const row = formatRow(st, st.format || format);
+        const k = showtimeKey(row);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        showtimes.push(row);
+      }
+      if (base.cinemaRefs && src.cinemaRefs) Object.assign(base.cinemaRefs, src.cinemaRefs);
+    };
+    absorb(base, '2D');
+    const aliasIds = [...(base.aliasIds || [])];
+    for (const extra of extras) {
+      absorb(extra, '3D');
+      aliasIds.push(String(extra.id));
+    }
+    for (const other of bases) {
+      if (other === base) continue;
+      absorb(other, '2D');
+      aliasIds.push(String(other.id));
+    }
+    base.showtimes = showtimes;
+    base.aliasIds = [...new Set(aliasIds)];
+    out.push(base);
+    collapsed += extras.length + bases.length - 1;
+  }
+  return { films: out, collapsed };
 }
 
 /**

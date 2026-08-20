@@ -2,7 +2,7 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { discoverFilmIds, fetchFilm, fetchCinema, mergeCinemaShowtimes } from './berlin.js';
+import { discoverFilmIds, fetchFilm, fetchCinema, mergeCinemaShowtimes, merge3DVariants } from './berlin.js';
 import { enrichFilm } from './enrich.js';
 import { computeRelevance, generateFacts, normalizeCountry, countryFilterOrder } from './relevance.js';
 import { bookingUrl } from './cinemas.js';
@@ -99,6 +99,11 @@ async function main() {
   });
   const merged = mergeCinemaShowtimes(rawFilms, extraShowtimes);
   log(`  cinema pages filled ${merged.added} missing showtimes on ${merged.filmsTouched} films.`);
+
+  const folded = merge3DVariants(rawFilms);
+  rawFilms.length = 0;
+  rawFilms.push(...folded.films);
+  if (folded.collapsed) log(`  folded ${folded.collapsed} 3D variant(s) into 2D titles.`);
 
   // Geocode cinemas with a known address but no coordinates yet (permanently cached — a
   // cinema's street address doesn't move). Sequential + rate-limited (Nominatim policy: max
