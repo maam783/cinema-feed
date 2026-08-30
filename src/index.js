@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { discoverFilmIds, fetchFilm, fetchCinema, mergeCinemaShowtimes, merge3DVariants } from './berlin.js';
+import { fetchFallbackShowtimes, mergeTitleShowtimes, seedFallbackCinemas } from './fallback.js';
 import { enrichFilm } from './enrich.js';
 import { computeRelevance, generateFacts, normalizeCountry, countryFilterOrder } from './relevance.js';
 import { bookingUrl } from './cinemas.js';
@@ -78,12 +79,21 @@ async function main() {
   }
   // Address stays cached; showtimes do not — film pages omit some houses that the
   // cinema page lists for the same film id (Zoo Palast 2D / Die Odyssee, Aug 2026).
-  const cinemaIds = [...cinemaMap.keys()].filter((cid) => !cid.startsWith('name:'));
+  // Also re-fetch cached ids that no film page mentioned this run (still-200 houses).
+  const cinemaIds = [
+    ...new Set([
+      ...[...cinemaMap.keys()].filter((cid) => !cid.startsWith('name:')),
+      ...Object.keys(cinemaCache).filter((cid) => !cid.startsWith('name:')),
+    ]),
+  ];
   const extraShowtimes = [];
   log(`Cinemas: ${cinemaMap.size} (fetching ${cinemaIds.length} pages for showtimes).`);
   await mapLimit(cinemaIds, 2, async (cid) => {
     const c = await fetchCinema(cid);
     if (!c) return;
+    if (c.name && !cinemaMap.has(cid)) {
+      cinemaMap.set(cid, { id: cid, name: c.name, district: c.district || null });
+    }
     if (c.address || c.website) {
       cinemaCache[cid] = {
         ...cinemaCache[cid],
@@ -104,6 +114,16 @@ async function main() {
   rawFilms.length = 0;
   rawFilms.push(...folded.films);
   if (folded.collapsed) log(`  folded ${folded.collapsed} 3D variant(s) into 2D titles.`);
+
+  // berlin.de 410'd Zoo Palast + most Yorck houses (late Aug 2026). Official
+  // Yorck JSON + kinoprogramm.com still have those showtimes; match by title.
+  seedFallbackCinemas(cinemaMap);
+  const fallbackExtras = await fetchFallbackShowtimes();
+  const fb = mergeTitleShowtimes(rawFilms, fallbackExtras);
+  log(
+    `  fallback filled ${fb.added} showtimes on ${fb.filmsTouched} films` +
+      ` (${fb.cinemasTouched} houses, ${fallbackExtras.length} raw).`
+  );
 
   // Geocode cinemas with a known address but no coordinates yet (permanently cached — a
   // cinema's street address doesn't move). Sequential + rate-limited (Nominatim policy: max
@@ -222,7 +242,7 @@ async function main() {
       version: FEED_VERSION,
       generatedAt: new Date().toISOString(),
       today: now,
-      source: 'berlin.de/kino',
+      source: 'berlin.de/kino+yorck.de+kinoprogramm.com',
       filmCount: films.length,
       cinemaCount: cinemas.length,
       showtimeCount: totalShowtimes,
